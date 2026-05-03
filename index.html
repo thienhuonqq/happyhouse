@@ -241,7 +241,13 @@ tr:last-child td{border-bottom:none}
     <h1>Happy House</h1>
     <div class="subtitle">Quản lý chi phí điện · nước hàng tháng</div>
   </div>
-
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+    <span id="syncStatus" style="font-size:11px;font-weight:500;color:var(--text3)"></span>
+    <button onclick="manualSync()" title="Đồng bộ Google Sheets"
+      style="padding:5px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:none;cursor:pointer;font-size:12px;color:var(--text2);white-space:nowrap">
+      🔄 Đồng bộ
+    </button>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════ TABS -->
@@ -498,6 +504,11 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <script>
+// ═══════════════════════════════════════════ GOOGLE SHEETS CONFIG
+// After deploying Code.gs as a Web App, paste the URL here:
+const SHEETS_URL = '';
+// e.g. 'https://script.google.com/macros/s/AKfycb.../exec'
+
 // ═══════════════════════════════════════════ CONSTANTS
 const ROOM_PRESETS = ['Nhi + Quỳnh','Trang + Vy','Thuận Ý + Chau','Khuê + Tuyền','Trân','Phòng khác'];
 const PERSON_PRESETS = ['Nhi','Quỳnh','Trang','Vy','Thuận Ý','Chau','Khuê','Tuyền','Trân','(Khác)'];
@@ -548,7 +559,7 @@ function waterPersons() {
   return rooms.flatMap(r => r.persons.filter(p => p.n.trim() && p.n !== '(Khác)').map(p=>({name:p.n,room:r.name})));
 }
 
-// ═══════════════════════════════════════════ DATABASE
+// ═══════════════════════════════════════════ DATABASE (localStorage)
 function dbLoad()    { try { return JSON.parse(localStorage.getItem(DB_KEY)||'[]'); } catch{ return []; } }
 function dbSave(r)   { localStorage.setItem(DB_KEY, JSON.stringify(r)); }
 function dbGet(id)   { return dbLoad().find(r=>r.id===id)||null; }
@@ -557,9 +568,78 @@ function dbUpsert(rec) {
   const i = all.findIndex(r=>r.id===rec.id);
   if(i>=0) all[i] = {...all[i], ...rec}; else all.unshift(rec);
   dbSave(all);
-  refreshDatalist(); // keep dropdowns up-to-date after every save
+  refreshDatalist();
+  pushToSheets('upsert', { record: (i>=0 ? all[i] : rec) }); // sync to Sheets
 }
-function dbDel(id)   { dbSave(dbLoad().filter(r=>r.id!==id)); }
+function dbDel(id) {
+  dbSave(dbLoad().filter(r=>r.id!==id));
+  pushToSheets('delete', { id }); // sync to Sheets
+}
+
+// ═══════════════════════════════════════════ GOOGLE SHEETS SYNC
+
+function setSyncStatus(state) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (state === 'syncing') { el.textContent = '⟳ Đang đồng bộ...'; el.style.color = 'var(--text3)'; }
+  if (state === 'ok')      { el.textContent = '✓ Google Sheets'; el.style.color = 'var(--accent)';
+    setTimeout(() => { if (el.textContent.startsWith('✓')) el.textContent = ''; }, 4000); }
+  if (state === 'error')   { el.textContent = '⚠ Lỗi đồng bộ'; el.style.color = 'var(--danger)'; }
+  if (state === 'local')   { el.textContent = '💾 Lưu cục bộ'; el.style.color = 'var(--text3)'; }
+  if (state === '')        { el.textContent = ''; }
+}
+
+async function syncFromSheets() {
+  if (!SHEETS_URL) { setSyncStatus('local'); return; }
+  setSyncStatus('syncing');
+  try {
+    const res  = await fetch(SHEETS_URL + '?t=' + Date.now());
+    const json = await res.json();
+    if (json.status === 'ok' && Array.isArray(json.records) && json.records.length) {
+      const local    = dbLoad();
+      const localMap = {};
+      local.forEach(r => localMap[r.id] = r);
+      // Sheets wins if its savedAt is newer (or local has none)
+      json.records.forEach(sr => {
+        const lr = localMap[sr.id];
+        if (!lr || !lr.savedAt || (sr.savedAt && sr.savedAt >= lr.savedAt)) {
+          localMap[sr.id] = sr;
+        }
+      });
+      dbSave(Object.values(localMap));
+      refreshDatalist();
+    }
+    setSyncStatus('ok');
+  } catch (err) {
+    console.warn('Sheets sync error:', err);
+    setSyncStatus('error');
+  }
+}
+
+async function pushToSheets(action, data) {
+  if (!SHEETS_URL) return;
+  try {
+    await fetch(SHEETS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...data })
+    });
+    setSyncStatus('ok');
+  } catch (err) {
+    console.warn('Sheets push error:', err);
+    setSyncStatus('error');
+  }
+}
+
+async function manualSync() {
+  await syncFromSheets();
+  onMonthChange();
+  const histTab = document.getElementById('tab-history');
+  if (histTab && histTab.classList.contains('active')) renderHistory();
+  const dashTab = document.getElementById('tab-dashboard');
+  if (dashTab && dashTab.classList.contains('active')) renderDashboard();
+  showToast('✓ Đã đồng bộ từ Google Sheets');
+}
 
 // ═══════════════════════════════════════════ MONTH DROPDOWN
 function genMonths() {
@@ -1261,10 +1341,19 @@ function initSeedData() {
 }
 
 // ═══════════════════════════════════════════ INIT
-initSeedData();
+initSeedData();      // seed Tháng 3/2026 baseline into localStorage if missing
 populateMonths();
 renderRooms();
 updateWater();
+
+// Pull latest data from Google Sheets in background, then refresh UI
+syncFromSheets().then(() => {
+  onMonthChange();
+  const histTab = document.getElementById('tab-history');
+  if (histTab && histTab.classList.contains('active')) renderHistory();
+  const dashTab = document.getElementById('tab-dashboard');
+  if (dashTab && dashTab.classList.contains('active')) renderDashboard();
+});
 </script>
 </body>
 </html>
