@@ -595,12 +595,17 @@ async function syncFromSheets() {
   try {
     const res  = await fetch(SHEETS_URL + '?t=' + Date.now());
     const json = await res.json();
-    if (json.status === 'ok' && Array.isArray(json.records) && json.records.length) {
-      const local    = dbLoad();
-      const localMap = {};
-      local.forEach(r => localMap[r.id] = r);
-      // Sheets wins if its savedAt is newer (or local has none)
+
+    const local    = dbLoad();
+    const localMap = {};
+    local.forEach(r => localMap[r.id] = r);
+
+    const sheetIds = new Set();
+
+    if (json.status === 'ok' && Array.isArray(json.records)) {
+      // Pull: Sheets wins if its savedAt is newer
       json.records.forEach(sr => {
+        sheetIds.add(sr.id);
         const lr = localMap[sr.id];
         if (!lr || !lr.savedAt || (sr.savedAt && sr.savedAt >= lr.savedAt)) {
           localMap[sr.id] = sr;
@@ -609,6 +614,13 @@ async function syncFromSheets() {
       dbSave(Object.values(localMap));
       refreshDatalist();
     }
+
+    // Push: send any local records missing from Sheets
+    const toPush = local.filter(r => !sheetIds.has(r.id));
+    for (const rec of toPush) {
+      await pushToSheets('upsert', { record: rec });
+    }
+
     setSyncStatus('ok');
   } catch (err) {
     console.warn('Sheets sync error:', err);
