@@ -916,10 +916,16 @@ function calculate() {
           <div class="person-line"><span class="person-name-tag">${p.n}</span><span class="person-amount">${fmt(each)} ₫</span></div>`).join('')}</div>`;
         vp.forEach(p => { personElec[p.n]=(personElec[p.n]||0)+each; });
       } else {
+        // Ratio mode: room's OWN electricity split equally; shared electricity split by weight
         const tw = vp.reduce((a,p)=>a+p.w,0);
+        const eachRoom = roomCost / n;
+        vp.forEach(p => {
+          const personalShared = tw>0 ? sharedCost*p.w/tw : sharedCost/n;
+          p._calc = eachRoom + personalShared;
+        });
         bdHtml = `<div class="person-breakdown">${vp.map(p=>`
-          <div class="person-line"><span class="person-name-tag">${p.n} <span style="opacity:.6;font-weight:400">(×${p.w})</span></span><span class="person-amount">${fmt(total*p.w/tw)} ₫</span></div>`).join('')}</div>`;
-        vp.forEach(p => { personElec[p.n]=(personElec[p.n]||0)+(total*p.w/tw); });
+          <div class="person-line"><span class="person-name-tag">${p.n} <span style="opacity:.6;font-weight:400">(×${p.w})</span></span><span class="person-amount">${fmt(p._calc)} ₫</span></div>`).join('')}</div>`;
+        vp.forEach(p => { personElec[p.n]=(personElec[p.n]||0)+p._calc; });
       }
     } else if(n===1 && vp.length===1) {
       personElec[vp[0].n] = (personElec[vp[0].n]||0)+total;
@@ -1066,8 +1072,10 @@ function copyResult() {
         });
       } else {
         const tw=vp.reduce((a,p)=>a+p.w,0);
+        const eachRoom=roomCost/n;
         vp.forEach(p=>{
-          const share=total*p.w/tw;
+          const personalShared=tw>0?sharedCost*p.w/tw:sharedCost/n;
+          const share=eachRoom+personalShared;
           const tot2=share+(waterEach||0);
           lines.push(`  → ${p.n}: ⚡${fmt(share)}${waterEach?` + 💧${fmt(waterEach)} = ${fmt(tot2)}`:''}  ₫`);
         });
