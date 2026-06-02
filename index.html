@@ -68,6 +68,8 @@ h1{font-size:20px;font-weight:700;letter-spacing:-0.3px}
 @media(max-width:440px){.meter-row{grid-template-columns:1fr 1fr}}
 .kwh-badge{background:var(--accent-light);color:var(--accent-text);border-radius:var(--radius-sm);padding:8px 10px;font-size:13px;font-weight:700;display:flex;flex-direction:column;justify-content:center;min-width:80px}
 .kwh-badge small{font-size:10px;font-weight:400;color:var(--accent);margin-bottom:2px}
+.kwh-badge.negative{background:var(--danger-light);color:var(--danger)}
+.kwh-badge.negative small{color:var(--danger)}
 .shared-section{border-top:1px solid var(--border);padding-top:11px;margin-top:4px}
 .shared-label{font-size:11px;color:var(--text2);font-weight:500;margin-bottom:7px}
 .weight-row{display:flex;align-items:center;gap:10px}
@@ -805,7 +807,11 @@ function setPersonField(id,i,field,val) {
 function refreshBadge(id) {
   const r=rooms.find(r=>r.id===id);
   const el=document.getElementById('ku-'+id);
-  if(el) el.textContent=Math.max(0,r.curr-r.prev)+' kWh';
+  const badge=document.getElementById('kb-'+id);
+  if(!el) return;
+  const diff = r.curr - r.prev;
+  el.textContent = diff + ' kWh';
+  if(badge) badge.classList.toggle('negative', diff < 0);
 }
 
 function personOpts(selected) {
@@ -820,7 +826,7 @@ function renderRooms() {
   const c = document.getElementById('roomList');
   c.innerHTML = '';
   rooms.forEach(r => {
-    const used = Math.max(0, r.curr-r.prev);
+    const used = r.curr - r.prev;
     const isRatio = r.mode==='ratio';
     const pHtml = r.persons.map((p,i)=>`
       <div class="person-row">
@@ -844,7 +850,7 @@ function renderRooms() {
       <div class="meter-row">
         <div class="field"><label>Tháng trước (kWh)</label><input type="number" value="${r.prev}" oninput="setField(${r.id},'prev',this.value)"></div>
         <div class="field"><label>Tháng này (kWh)</label><input type="number" value="${r.curr}" oninput="setField(${r.id},'curr',this.value)"></div>
-        <div class="kwh-badge"><small>Tiêu thụ</small><span id="ku-${r.id}">${used} kWh</span></div>
+        <div class="kwh-badge${used<0?' negative':''}" id="kb-${r.id}"><small>Tiêu thụ</small><span id="ku-${r.id}">${used} kWh</span></div>
       </div>
       <div class="shared-section">
         <div class="shared-label">Trọng số điện chung (Bếp + Máy giặt)</div>
