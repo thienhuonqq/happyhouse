@@ -599,29 +599,38 @@ async function syncFromSheets() {
     const res  = await fetch(SHEETS_URL + '?t=' + Date.now());
     const json = await res.json();
 
-    const local    = dbLoad();
-    const localMap = {};
-    local.forEach(r => localMap[r.id] = r);
-
     const sheetIds = new Set();
 
     if (json.status === 'ok' && Array.isArray(json.records)) {
-      // Pull: Sheets wins if its savedAt is newer
+      // Re-read localStorage NOW (after the async fetch) to avoid race condition:
+      // the user may have saved data while we were waiting for Sheets to respond.
+      const local    = dbLoad();
+      const localMap = {};
+      local.forEach(r => localMap[r.id] = r);
+
+      // Pull: Sheets wins only if its savedAt is strictly newer than local
       json.records.forEach(sr => {
         sheetIds.add(sr.id);
         const lr = localMap[sr.id];
-        if (!lr || !lr.savedAt || (sr.savedAt && sr.savedAt >= lr.savedAt)) {
+        if (!lr || !lr.savedAt || (sr.savedAt && sr.savedAt > lr.savedAt)) {
           localMap[sr.id] = sr;
         }
       });
       dbSave(Object.values(localMap));
       refreshDatalist();
-    }
 
-    // Push: send any local records missing from Sheets
-    const toPush = local.filter(r => !sheetIds.has(r.id));
-    for (const rec of toPush) {
-      await pushToSheets('upsert', { record: rec });
+      // Push: send any local records missing from Sheets
+      const toPush = local.filter(r => !sheetIds.has(r.id));
+      for (const rec of toPush) {
+        await pushToSheets('upsert', { record: rec });
+      }
+    } else {
+      // Sheets unavailable — still push any local records not yet in Sheets
+      const local = dbLoad();
+      const toPush = local.filter(r => !sheetIds.has(r.id));
+      for (const rec of toPush) {
+        await pushToSheets('upsert', { record: rec });
+      }
     }
 
     setSyncStatus('ok');
@@ -1044,6 +1053,9 @@ function saveWater() {
   rec.savedAt   = new Date().toISOString();
   dbUpsert(rec);
   showToast(`✓ Đã lưu tiền nước ${label}`);
+  // Refresh dashboard/history if currently active
+  if(document.getElementById('tab-dashboard').classList.contains('active')) renderDashboard();
+  if(document.getElementById('tab-history').classList.contains('active')) renderHistory();
 }
 
 // ═══════════════════════════════════════════ COPY
