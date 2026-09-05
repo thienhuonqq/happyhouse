@@ -310,7 +310,10 @@ tr:last-child td{border-bottom:none}
 
   <div class="card">
     <div class="card-title">🏠 Danh sách phòng</div>
+    <p class="hint" style="margin-top:0;margin-bottom:10px">Có thể nhập trực tiếp tên phòng và tên người ở; các gợi ý không giới hạn lựa chọn.</p>
     <div id="roomList"></div>
+    <datalist id="roomNameSuggestions"></datalist>
+    <datalist id="personNameSuggestions"></datalist>
     <button class="add-room-btn" onclick="addRoom()">+ Thêm phòng</button>
     <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap">
       <span class="hint" id="totalWeightInfo" style="margin:0">Tổng trọng số: 0</span>
@@ -513,8 +516,8 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycby6kAyd3ELIneAGDlnyl
 // e.g. 'https://script.google.com/macros/s/AKfycb.../exec'
 
 // ═══════════════════════════════════════════ CONSTANTS
-const ROOM_PRESETS = ['Nhi + Quỳnh','Trang + Vy','Thuận Ý + Chau','Khuê + Tuyền','Trân','Phòng khác'];
-const PERSON_PRESETS = ['Nhi','Quỳnh','Trang','Vy','Thuận Ý','Chau','Khuê','Tuyền','Trân','(Khác)'];
+const ROOM_SUGGESTIONS = ['Nhi + Quỳnh','Trang + Vy','Thuận Ý + Chau','Khuê + Tuyền','Trân','Ngan + Nhu'];
+const PERSON_SUGGESTIONS = ['Nhi','Quỳnh','Trang','Vy','Thuận Ý','Chau','Khuê','Tuyền','Trân','Ngan','Nhu'];
 const DB_KEY = 'happy_house_v2';
 
 // ═══════════════════════════════════════════ ROOMS STATE
@@ -523,14 +526,16 @@ let rooms = [
   {id:2,name:'Trang + Vy',   prev:1184, curr:1245, sw:1.75,mode:'ratio', persons:[{n:'Trang',w:1},{n:'Vy',w:0.75}]},
   {id:3,name:'Thuận Ý + Chau',prev:880, curr:994,  sw:2,   mode:'equal', persons:[{n:'Thuận Ý',w:1},{n:'Chau',w:1}]},
   {id:4,name:'Khuê + Tuyền', prev:2947,curr:3142,sw:1,   mode:'equal', persons:[{n:'Khuê',w:1},{n:'Tuyền',w:1}]},
-  {id:5,name:'Trân',         prev:1032,curr:1119,sw:0.5, mode:'equal', persons:[{n:'Trân',w:1}]}
+  {id:5,name:'Trân',         prev:1032,curr:1119,sw:0.5, mode:'equal', persons:[{n:'Trân',w:1}]},
+  {id:6,name:'Ngan + Nhu',   prev:0,    curr:0,   sw:1,   mode:'equal', persons:[{n:'Ngan',w:1},{n:'Nhu',w:1}]}
 ];
-let nextId = 6;
+let nextId = 7;
 
 // ═══════════════════════════════════════════ HELPERS
 const fmt   = n => Math.round(n).toLocaleString('vi-VN');
 const fmtS  = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? Math.round(n/1e3)+'K' : Math.round(n)+'';
 const mid   = label => { const m=label.match(/(\d+)\/(\d+)/); return m ? m[2]+'-'+m[1].padStart(2,'0') : label; };
+const esc   = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
 function prevMonthOf(label) {
   const m = label.match(/Tháng (\d+)\/(\d+)/);
@@ -553,12 +558,8 @@ function showToast(msg) {
   el._t = setTimeout(() => { el.style.opacity='0'; el.style.transform='translateX(-50%) translateY(10px)'; }, 2800);
 }
 
-function allPersons() {
-  // All named persons (including placeholder "(Khác)") — used for electricity
-  return rooms.flatMap(r => r.persons.filter(p => p.n.trim()).map(p=>({name:p.n,room:r.name})));
-}
-function waterPersons() {
-  // Only real residents for water split — filters out "(Khác)" placeholder
+function residents() {
+  // Real residents only — old "(Khác)" placeholders are not people.
   return rooms.flatMap(r => r.persons.filter(p => p.n.trim() && p.n !== '(Khác)').map(p=>({name:p.n,room:r.name})));
 }
 
@@ -741,7 +742,9 @@ function onPrevMonthChange(silent) {
 
   let updated = 0;
   rec.rooms.forEach(prevRoom => {
-    const cur = rooms.find(r => r.name === prevRoom.name);
+    // Room ID remains stable when its name or residents change.
+    // Name fallback keeps older saved records compatible.
+    const cur = rooms.find(r => r.id === prevRoom.id) || rooms.find(r => r.name === prevRoom.name);
     if(cur && prevRoom.curr != null) { cur.prev = prevRoom.curr; updated++; }
   });
 
@@ -782,7 +785,7 @@ function updateBillInfo() {
 // ═══════════════════════════════════════════ ROOMS
 function updateMeta() {
   const tw = rooms.reduce((a,r)=>a+r.sw, 0);
-  const tp = allPersons().length;
+  const tp = residents().length;
   const sumRoom = rooms.reduce((a,r)=>a+Math.max(0,r.curr-r.prev),0);
   document.getElementById('totalWeightInfo').textContent = `Tổng trọng số: ${tw.toFixed(2)}`;
   document.getElementById('totalPersonInfo').textContent = `Tổng số người: ${tp}`;
@@ -792,7 +795,8 @@ function updateMeta() {
 }
 
 function addRoom() {
-  rooms.push({id:nextId++,name:'Phòng khác',prev:0,curr:0,sw:1,mode:'equal',persons:[{n:'',w:1}]});
+  const id = nextId++;
+  rooms.push({id,name:`Phòng ${id}`,prev:0,curr:0,sw:1,mode:'equal',persons:[{n:'',w:1}]});
   renderRooms();
 }
 function removeRoom(id)          { rooms=rooms.filter(r=>r.id!==id); renderRooms(); }
@@ -823,12 +827,9 @@ function refreshBadge(id) {
   if(badge) badge.classList.toggle('negative', diff < 0);
 }
 
-function personOpts(selected) {
-  return PERSON_PRESETS.map(n=>`<option value="${n}"${n===selected?' selected':''}>${n}</option>`).join('');
-}
-function roomOpts(selected) {
-  const extra = !ROOM_PRESETS.includes(selected) ? `<option value="${selected}" selected>${selected}</option>` : '';
-  return extra + ROOM_PRESETS.map(n=>`<option value="${n}"${n===selected?' selected':''}>${n}</option>`).join('');
+function renderNameSuggestions() {
+  document.getElementById('roomNameSuggestions').innerHTML = ROOM_SUGGESTIONS.map(n=>`<option value="${esc(n)}"></option>`).join('');
+  document.getElementById('personNameSuggestions').innerHTML = PERSON_SUGGESTIONS.map(n=>`<option value="${esc(n)}"></option>`).join('');
 }
 
 function renderRooms() {
@@ -839,9 +840,8 @@ function renderRooms() {
     const isRatio = r.mode==='ratio';
     const pHtml = r.persons.map((p,i)=>`
       <div class="person-row">
-        <select class="person-select" onchange="setPersonField(${r.id},${i},'n',this.value)">
-          ${personOpts(p.n)}
-        </select>
+        <input class="person-select" type="text" list="personNameSuggestions" value="${esc(p.n)}"
+          placeholder="Tên người ở" oninput="setPersonField(${r.id},${i},'n',this.value)">
         ${isRatio ? `
           <input type="range" class="person-weight-range" min="0.25" max="2" step="0.25" value="${p.w}"
             oninput="setPersonField(${r.id},${i},'w',this.value)" style="flex:1">
@@ -853,7 +853,8 @@ function renderRooms() {
     div.className = 'room-card';
     div.innerHTML = `
       <div class="room-header">
-        <select class="room-name-select" onchange="setField(${r.id},'name',this.value)">${roomOpts(r.name)}</select>
+        <input class="room-name-select" type="text" list="roomNameSuggestions" value="${esc(r.name)}"
+          placeholder="Tên phòng" oninput="setField(${r.id},'name',this.value)">
         <button class="del-btn" onclick="removeRoom(${r.id})">Xóa</button>
       </div>
       <div class="meter-row">
@@ -901,7 +902,7 @@ function calculate() {
   if(!c) { alert('Vui lòng nhập tổng tiền điện và tổng kWh.'); return; }
   const monthLabel = document.getElementById('monthLabel').value||'';
   const waterBill  = parseFloat(document.getElementById('waterTotal').value)||0;
-  const persons    = allPersons();
+  const persons    = residents();
   const waterEach  = persons.length>0&&waterBill>0 ? waterBill/persons.length : 0;
 
   document.getElementById('r-total').textContent     = fmt(c.bill)+' ₫';
@@ -929,7 +930,7 @@ function calculate() {
       if(r.mode==='equal') {
         const each = total/n;
         bdHtml = `<div class="person-breakdown">${vp.map(p=>`
-          <div class="person-line"><span class="person-name-tag">${p.n}</span><span class="person-amount">${fmt(each)} ₫</span></div>`).join('')}</div>`;
+          <div class="person-line"><span class="person-name-tag">${esc(p.n)}</span><span class="person-amount">${fmt(each)} ₫</span></div>`).join('')}</div>`;
         vp.forEach(p => { personElec[p.n]=(personElec[p.n]||0)+each; });
       } else {
         // Ratio mode: room's OWN electricity split equally; shared electricity split by weight
@@ -940,7 +941,7 @@ function calculate() {
           p._calc = eachRoom + personalShared;
         });
         bdHtml = `<div class="person-breakdown">${vp.map(p=>`
-          <div class="person-line"><span class="person-name-tag">${p.n} <span style="opacity:.6;font-weight:400">(×${p.w})</span></span><span class="person-amount">${fmt(p._calc)} ₫</span></div>`).join('')}</div>`;
+          <div class="person-line"><span class="person-name-tag">${esc(p.n)} <span style="opacity:.6;font-weight:400">(×${p.w})</span></span><span class="person-amount">${fmt(p._calc)} ₫</span></div>`).join('')}</div>`;
         vp.forEach(p => { personElec[p.n]=(personElec[p.n]||0)+p._calc; });
       }
     } else if(n===1 && vp.length===1) {
@@ -950,7 +951,7 @@ function calculate() {
     const tag = n>1 ? (r.mode==='equal'?`<span class="tag tag-equal">chia đều</span>`:`<span class="tag tag-ratio">tỉ lệ</span>`) : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><div class="room-label">${r.name} ${tag}</div><div class="room-meta">${used} kWh · trọng số: ${r.sw}</div>${bdHtml}</td>
+      <td><div class="room-label">${esc(r.name)} ${tag}</div><div class="room-meta">${used} kWh · trọng số: ${r.sw}</div>${bdHtml}</td>
       <td>${fmt(roomCost)} ₫</td><td>${fmt(sharedCost)} ₫</td><td style="font-weight:700">${fmt(total)} ₫</td>`;
     tbody.appendChild(tr);
   });
@@ -966,13 +967,13 @@ function calculate() {
     document.getElementById('rw-count').textContent = persons.length+' người';
     document.getElementById('rw-each').textContent  = fmt(waterEach)+' ₫';
     const wb = document.getElementById('resultWaterBody');
-    wb.innerHTML = persons.map(p=>`<tr><td style="font-weight:500">${p.name}</td><td style="color:var(--text3)">${p.room}</td><td>${fmt(waterEach)} ₫</td></tr>`).join('');
+    wb.innerHTML = persons.map(p=>`<tr><td style="font-weight:500">${esc(p.name)}</td><td style="color:var(--text3)">${esc(p.room)}</td><td>${fmt(waterEach)} ₫</td></tr>`).join('');
 
     // Grand total
     document.getElementById('resultGrandSection').style.display='block';
     const gb = document.getElementById('resultGrandBody');
     gb.innerHTML = persons.map(p=>`
-      <tr><td style="font-weight:600">${p.name}</td>
+      <tr><td style="font-weight:600">${esc(p.name)}</td>
       <td>${fmt(personElec[p.name]||0)} ₫</td>
       <td style="color:var(--water)">${fmt(waterEach)} ₫</td>
       <td style="font-weight:700">${fmt((personElec[p.name]||0)+waterEach)} ₫</td></tr>`).join('');
@@ -1024,7 +1025,7 @@ function updateWater() {
   document.getElementById('waterResult').style.display='block';
   document.getElementById('waterEmpty').style.display='none';
 
-  const persons = waterPersons();
+  const persons = residents();
   const autoCount = persons.length || 1;
   const override  = parseInt(document.getElementById('waterPersonCount').value);
   const n         = (!isNaN(override) && override > 0) ? override : autoCount;
@@ -1037,7 +1038,7 @@ function updateWater() {
 
   const tb = document.getElementById('waterPersonBody');
   // Show the real named persons; if override > autoCount, add anonymous rows
-  let rows = persons.map(p=>`<tr><td style="font-weight:500">${p.name}</td><td style="color:var(--text3)">${p.room}</td><td>${fmt(each)} ₫</td></tr>`);
+  let rows = persons.map(p=>`<tr><td style="font-weight:500">${esc(p.name)}</td><td style="color:var(--text3)">${esc(p.room)}</td><td>${fmt(each)} ₫</td></tr>`);
   if(n > autoCount) {
     for(let i=autoCount; i<n; i++) rows.push(`<tr><td style="color:var(--text3)">Người ${i+1}</td><td style="color:var(--text3)">—</td><td>${fmt(each)} ₫</td></tr>`);
   }
@@ -1063,7 +1064,7 @@ function copyResult() {
   const c = calcCore(); if(!c) return;
   const label    = document.getElementById('monthLabel').value||'';
   const waterBill= parseFloat(document.getElementById('waterTotal').value)||0;
-  const persons  = waterPersons();
+  const persons  = residents();
   const waterEach= persons.length>0&&waterBill>0 ? waterBill/persons.length : 0;
 
   let lines = [
@@ -1169,7 +1170,6 @@ function renderDashboard() {
     const tw  = latest.rooms.reduce((a,r)=>a+r.sw, 0);
     const spu = tw>0 ? (latest.sharedTotal||0)/tw : 0;
     roomData = latest.rooms
-      .filter(r => r.name !== 'Phòng khác')
       .map(r => {
         const used  = Math.max(0,(r.curr||0)-(r.prev||0));
         const total = Math.round(used*(latest.pricePerKwh||0) + spu*r.sw);
@@ -1185,8 +1185,8 @@ function renderDashboard() {
       const perPerson= r.vp.length>0 ? fmt(Math.round(r.total/r.vp.length)) : '—';
       return `<div class="cbar-row">
         <div class="cbar-header">
-          <div><div class="cbar-name">${r.name}</div>
-          <div class="cbar-sub">${r.vp.map(p=>p.n).join(' · ')}</div></div>
+          <div><div class="cbar-name">${esc(r.name)}</div>
+          <div class="cbar-sub">${r.vp.map(p=>esc(p.n)).join(' · ')}</div></div>
           <div class="cbar-amount" style="color:${r.color}">${fmt(r.total)} ₫</div>
         </div>
         <div class="cbar-track"><div class="cbar-fill" style="background:${r.color};width:${pct}%">
@@ -1208,11 +1208,11 @@ function renderDashboard() {
     document.getElementById('personChartMonthLabel').textContent = '– '+(latest.month||'');
     document.getElementById('personChartCustom').innerHTML = pData.map((p,i) => `
       <div class="pbar-row">
-        <div class="pbar-avatar" style="background:${p.color}">${Array.from(p.name)[0]}</div>
+        <div class="pbar-avatar" style="background:${p.color}">${esc(Array.from(p.name)[0])}</div>
         <div class="pbar-body">
           <div class="pbar-top">
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-              <span class="pbar-name">${p.name}</span>
+              <span class="pbar-name">${esc(p.name)}</span>
               ${i===0?'<span class="pbar-badge">🏆 cao nhất</span>':''}
             </div>
             <span class="pbar-total" style="color:${p.color}">${fmt(p.total)} ₫</span>
@@ -1288,7 +1288,7 @@ function viewDetail(id) {
     r.rooms.forEach(rm=>{
       const used=Math.max(0,(rm.curr||0)-(rm.prev||0));
       const rc=used*(r.pricePerKwh||0), sc=spu*rm.sw;
-      html+=`<tr><td class="room-label">${rm.name}</td><td>${used}</td><td>${fmt(rc)} ₫</td><td>${fmt(sc)} ₫</td><td style="font-weight:700">${fmt(rc+sc)} ₫</td></tr>`;
+      html+=`<tr><td class="room-label">${esc(rm.name)}</td><td>${used}</td><td>${fmt(rc)} ₫</td><td>${fmt(sc)} ₫</td><td style="font-weight:700">${fmt(rc+sc)} ₫</td></tr>`;
     });
     html+=`</tbody></table></div>`;
   }
@@ -1296,7 +1296,7 @@ function viewDetail(id) {
     html+=`<div style="margin-top:14px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Chi phí theo người</div>
     <table><thead><tr><th>Tên</th><th>⚡ Điện</th><th>💧 Nước</th><th>Tổng</th></tr></thead><tbody>`;
     r.personResults.forEach(p=>{
-      html+=`<tr><td style="font-weight:600">${p.name}</td><td>${fmt(p.dien||0)} ₫</td><td style="color:var(--water)">${fmt(waterEach)} ₫</td><td style="font-weight:700">${fmt((p.dien||0)+waterEach)} ₫</td></tr>`;
+      html+=`<tr><td style="font-weight:600">${esc(p.name)}</td><td>${fmt(p.dien||0)} ₫</td><td style="color:var(--water)">${fmt(waterEach)} ₫</td><td style="font-weight:700">${fmt((p.dien||0)+waterEach)} ₫</td></tr>`;
     });
     html+=`</tbody></table></div>`;
   }
@@ -1381,6 +1381,7 @@ function initSeedData() {
 
 // ═══════════════════════════════════════════ INIT
 initSeedData();      // seed Tháng 3/2026 baseline into localStorage if missing
+renderNameSuggestions();
 populateMonths();
 renderRooms();
 updateWater();

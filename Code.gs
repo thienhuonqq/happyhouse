@@ -12,12 +12,13 @@
 
 const SHEET_NAME = 'HappyHouseData';
 
-const HEADERS = [
+const BASE_HEADERS = [
   'id', 'month', 'totalBill', 'totalKwh', 'sharedKwh',
-  'pricePerKwh', 'waterBill', 'savedAt',
-  'Nhi', 'Quỳnh', 'Trang', 'Vy', 'Thuận Ý', 'Chau', 'Khuê', 'Tuyền', 'Trân',
-  'data_json'
+  'pricePerKwh', 'waterBill', 'savedAt'
 ];
+const DEFAULT_PEOPLE = ['Nhi', 'Quỳnh', 'Trang', 'Vy', 'Thuận Ý', 'Chau', 'Khuê', 'Tuyền', 'Trân', 'Ngan', 'Nhu'];
+const HEADERS = BASE_HEADERS.concat(DEFAULT_PEOPLE, ['data_json']);
+const MAX_PERSON_COLUMNS = 50;
 
 // ── Get or create the data sheet ──────────────────────────────
 function getSheet() {
@@ -31,36 +32,56 @@ function getSheet() {
     sheet.setColumnWidth(HEADERS.length, 800); // data_json column wide
     sheet.getRange(1, 1, 1, HEADERS.length).setHorizontalAlignment('center');
   }
+  ensurePersonColumns(sheet, DEFAULT_PEOPLE);
   return sheet;
 }
 
-// ── Build a readable row from a record ────────────────────────
-function recordToRow(rec) {
-  const persons = rec.personResults || [];
-  function getPersonTotal(name) {
-    const p = persons.find(p => p.name === name);
-    return p ? (p.total || 0) : '';
+function getHeaders(sheet) {
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  return sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
+}
+
+// Add new residents immediately before data_json, preserving every old row.
+function ensurePersonColumns(sheet, names) {
+  let headers = getHeaders(sheet);
+  let jsonIndex = headers.indexOf('data_json');
+  if (jsonIndex < 0) {
+    jsonIndex = headers.length;
+    sheet.getRange(1, jsonIndex + 1).setValue('data_json');
+    headers.push('data_json');
   }
-  return [
-    rec.id || '',
-    rec.month || '',
-    rec.totalBill || '',
-    rec.totalKwh || '',
-    rec.sharedKwh || '',
-    rec.pricePerKwh ? Math.round(rec.pricePerKwh) : '',
-    rec.waterBill || '',
-    rec.savedAt || '',
-    getPersonTotal('Nhi'),
-    getPersonTotal('Quỳnh'),
-    getPersonTotal('Trang'),
-    getPersonTotal('Vy'),
-    getPersonTotal('Thuận Ý'),
-    getPersonTotal('Chau'),
-    getPersonTotal('Khuê'),
-    getPersonTotal('Tuyền'),
-    getPersonTotal('Trân'),
-    JSON.stringify(rec)
-  ];
+
+  const reserved = new Set(BASE_HEADERS.concat(['data_json', '(Khác)']));
+  const available = Math.max(0, MAX_PERSON_COLUMNS - Math.max(0, jsonIndex - BASE_HEADERS.length));
+  const missing = [...new Set((names || []).map(String).map(n => n.trim()).filter(n =>
+    n && n.length <= 80 && !/^[=+\-@]/.test(n) && !reserved.has(n) && !headers.includes(n)
+  ))].slice(0, available);
+  if (missing.length) {
+    sheet.insertColumnsBefore(jsonIndex + 1, missing.length);
+    sheet.getRange(1, jsonIndex + 1, 1, missing.length).setValues([missing]);
+    headers.splice(jsonIndex, 0, ...missing);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#d9ead3').setHorizontalAlignment('center');
+  }
+  sheet.setColumnWidth(headers.indexOf('data_json') + 1, 800);
+  return headers;
+}
+
+// ── Build a readable row from a record ────────────────────────
+function recordToRow(rec, headers) {
+  const persons = rec.personResults || [];
+  const personTotals = {};
+  persons.forEach(p => {
+    if (!p.name) return;
+    const total = p.total != null ? p.total : (Number(p.dien) || 0) + (Number(p.nuoc) || 0);
+    personTotals[p.name] = (personTotals[p.name] || 0) + total;
+  });
+
+  return headers.map(header => {
+    if (header === 'data_json') return JSON.stringify(rec);
+    if (header === 'pricePerKwh') return rec.pricePerKwh ? Math.round(rec.pricePerKwh) : '';
+    if (BASE_HEADERS.includes(header)) return rec[header] || '';
+    return Object.prototype.hasOwnProperty.call(personTotals, header) ? personTotals[header] : '';
+  });
 }
 
 // ── GET: return all records as JSON ───────────────────────────
@@ -69,7 +90,7 @@ function doGet(e) {
     const sheet = getSheet();
     const data  = sheet.getDataRange().getValues();
     const records = [];
-    const jsonCol = HEADERS.length - 1; // last column = data_json
+    const jsonCol = getHeaders(sheet).indexOf('data_json');
     for (let i = 1; i < data.length; i++) {
       try {
         if (data[i][jsonCol]) records.push(JSON.parse(data[i][jsonCol]));
@@ -89,8 +110,9 @@ function doPost(e) {
 
     if (body.action === 'upsert') {
       const rec  = body.record;
+      const headers = ensurePersonColumns(sheet, (rec.personResults || []).map(p => p.name));
       const data = sheet.getDataRange().getValues();
-      const row  = recordToRow(rec);
+      const row  = recordToRow(rec, headers);
       let found  = false;
 
       for (let i = 1; i < data.length; i++) {
@@ -106,7 +128,7 @@ function doPost(e) {
         // Sort by id descending so newest month is at the top
         const last = sheet.getLastRow();
         if (last > 2) {
-          sheet.getRange(2, 1, last - 1, HEADERS.length).sort({ column: 1, ascending: false });
+          sheet.getRange(2, 1, last - 1, headers.length).sort({ column: 1, ascending: false });
         }
       }
       return respond({ status: 'ok' });
