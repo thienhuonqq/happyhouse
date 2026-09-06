@@ -16,7 +16,7 @@ const BASE_HEADERS = [
   'id', 'month', 'totalBill', 'totalKwh', 'sharedKwh',
   'pricePerKwh', 'waterBill', 'savedAt'
 ];
-const DEFAULT_PEOPLE = ['Nhi', 'Quỳnh', 'Trang', 'Vy', 'Thuận Ý', 'Chau', 'Khuê', 'Tuyền', 'Trân', 'Ngan', 'Nhu'];
+const DEFAULT_PEOPLE = ['Nhi', 'Quỳnh', 'Trang', 'Vy', 'Thuận Ý', 'Chau', 'Khuê', 'Tuyền', 'Trân', 'Nhu', 'Ngan'];
 const HEADERS = BASE_HEADERS.concat(DEFAULT_PEOPLE, ['data_json']);
 const MAX_PERSON_COLUMNS = 50;
 

@@ -516,8 +516,15 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycby6kAyd3ELIneAGDlnyl
 // e.g. 'https://script.google.com/macros/s/AKfycb.../exec'
 
 // ═══════════════════════════════════════════ CONSTANTS
-const ROOM_SUGGESTIONS = ['Nhi + Quỳnh','Trang + Vy','Thuận Ý + Chau','Khuê + Tuyền','Trân','Ngan + Nhu'];
-const PERSON_SUGGESTIONS = ['Nhi','Quỳnh','Trang','Vy','Thuận Ý','Chau','Khuê','Tuyền','Trân','Ngan','Nhu'];
+const HOUSEHOLD_ROSTER = [
+  {name:'Nhi',room:'Nhi + Quỳnh'}, {name:'Quỳnh',room:'Nhi + Quỳnh'},
+  {name:'Trang',room:'Trang + Vy'}, {name:'Vy',room:'Trang + Vy'},
+  {name:'Thuận Ý',room:'Thuận Ý + Chau'}, {name:'Chau',room:'Thuận Ý + Chau'},
+  {name:'Khuê',room:'Khuê + Tuyền'}, {name:'Tuyền',room:'Khuê + Tuyền'},
+  {name:'Trân',room:'Trân'}, {name:'Nhu',room:'Ngan + Nhu'}, {name:'Ngan',room:'Ngan + Nhu'}
+];
+const ROOM_SUGGESTIONS = [...new Set(HOUSEHOLD_ROSTER.map(p=>p.room))];
+const PERSON_SUGGESTIONS = HOUSEHOLD_ROSTER.map(p=>p.name);
 const DB_KEY = 'happy_house_v2';
 
 // ═══════════════════════════════════════════ ROOMS STATE
@@ -527,7 +534,7 @@ let rooms = [
   {id:3,name:'Thuận Ý + Chau',prev:880, curr:994,  sw:2,   mode:'equal', persons:[{n:'Thuận Ý',w:1},{n:'Chau',w:1}]},
   {id:4,name:'Khuê + Tuyền', prev:2947,curr:3142,sw:1,   mode:'equal', persons:[{n:'Khuê',w:1},{n:'Tuyền',w:1}]},
   {id:5,name:'Trân',         prev:1032,curr:1119,sw:0.5, mode:'equal', persons:[{n:'Trân',w:1}]},
-  {id:6,name:'Ngan + Nhu',   prev:0,    curr:0,   sw:1,   mode:'equal', persons:[{n:'Ngan',w:1},{n:'Nhu',w:1}]}
+  {id:6,name:'Ngan + Nhu',   prev:0,    curr:0,   sw:1,   mode:'equal', persons:[{n:'Nhu',w:1},{n:'Ngan',w:1}]}
 ];
 let nextId = 7;
 
@@ -561,6 +568,20 @@ function showToast(msg) {
 function residents() {
   // Real residents only — old "(Khác)" placeholders are not people.
   return rooms.flatMap(r => r.persons.filter(p => p.n.trim() && p.n !== '(Khác)').map(p=>({name:p.n,room:r.name})));
+}
+
+function residentsForWaterDisplay(persons, count) {
+  const result = persons.map(p=>({...p}));
+  const assigned = new Set(result.map(p=>p.name));
+  for(const resident of HOUSEHOLD_ROSTER) {
+    if(result.length >= count) break;
+    if(!assigned.has(resident.name)) {
+      result.push({...resident});
+      assigned.add(resident.name);
+    }
+  }
+  while(result.length < count) result.push({name:`Người ${result.length+1}`,room:'—'});
+  return result;
 }
 
 // ═══════════════════════════════════════════ DATABASE (localStorage)
@@ -1037,12 +1058,9 @@ function updateWater() {
   document.getElementById('w-count-note').textContent = n+' người';
 
   const tb = document.getElementById('waterPersonBody');
-  // Show the real named persons; if override > autoCount, add anonymous rows
-  let rows = persons.map(p=>`<tr><td style="font-weight:500">${esc(p.name)}</td><td style="color:var(--text3)">${esc(p.room)}</td><td>${fmt(each)} ₫</td></tr>`);
-  if(n > autoCount) {
-    for(let i=autoCount; i<n; i++) rows.push(`<tr><td style="color:var(--text3)">Người ${i+1}</td><td style="color:var(--text3)">—</td><td>${fmt(each)} ₫</td></tr>`);
-  }
-  tb.innerHTML = rows.join('');
+  // Fill older nine-person records from the current household roster first.
+  const displayedPersons = residentsForWaterDisplay(persons, n);
+  tb.innerHTML = displayedPersons.map((p,i)=>`<tr><td style="font-weight:500${i>=autoCount?';color:var(--text3)':''}">${esc(p.name)}</td><td style="color:var(--text3)">${esc(p.room)}</td><td>${fmt(each)} ₫</td></tr>`).join('');
 }
 
 function saveWater() {
