@@ -480,18 +480,8 @@ tr:last-child td{border-bottom:none}
   <div class="sheets-card" id="sheetsCard" style="display:none">
     <div class="sheets-title">🟢 Kết nối với Google Sheets / Excel</div>
     <div class="sheets-body">
-      <strong>Cách 1 – Copy-paste thủ công (đơn giản nhất):</strong>
-      <ol>
-        <li>Nhấn <strong>Xuất CSV</strong> để tải file dữ liệu về máy</li>
-        <li>Mở Google Sheets → <strong>File → Import → Upload</strong> → chọn file .csv vừa tải</li>
-        <li>Chọn "Replace spreadsheet" hoặc "Insert new sheet" tuỳ ý</li>
-      </ol>
-      <strong style="display:block;margin-top:8px">Cách 2 – Tự động với file Excel có sẵn "Happy House admin.xlsx":</strong>
-      <ol>
-        <li>Mở file <em>Happy House admin.xlsx</em></li>
-        <li>Tạo sheet mới tên "Data" và paste dữ liệu CSV vào đó</li>
-        <li>Dùng <code>=VLOOKUP()</code> trong các sheet tháng để kéo số liệu tự động</li>
-      </ol>
+      Dữ liệu tự động đồng bộ với Google Sheets mỗi khi mở app hoặc lưu tháng mới. Nhấn <strong>🔄 Đồng bộ</strong> để cập nhật ngay.
+      <div class="sheets-tip">Cần file riêng? Nhấn <strong>Xuất CSV</strong> rồi mở bằng Excel hoặc Google Sheets.</div>
     </div>
   </div>
 </div>
@@ -521,11 +511,12 @@ const HOUSEHOLD_ROSTER = [
   {name:'Trang',room:'Trang + Vy'}, {name:'Vy',room:'Trang + Vy'},
   {name:'Thuận Ý',room:'Thuận Ý + Chau'}, {name:'Chau',room:'Thuận Ý + Chau'},
   {name:'Khuê',room:'Khuê + Tuyền'}, {name:'Tuyền',room:'Khuê + Tuyền'},
-  {name:'Trân',room:'Trân'}, {name:'Nhu',room:'Ngan + Nhu'}, {name:'Ngan',room:'Ngan + Nhu'}
+  {name:'Trân',room:'Trân'}, {name:'Như',room:'Như + Ngân'}, {name:'Ngân',room:'Như + Ngân'}
 ];
 const ROOM_SUGGESTIONS = [...new Set(HOUSEHOLD_ROSTER.map(p=>p.room))];
 const PERSON_SUGGESTIONS = HOUSEHOLD_ROSTER.map(p=>p.name);
 const DB_KEY = 'happy_house_v2';
+const MONTH_RE = /^(Tháng )?\d{1,2}\/\d{4}$/;
 
 // ═══════════════════════════════════════════ ROOMS STATE
 let rooms = [
@@ -534,7 +525,7 @@ let rooms = [
   {id:3,name:'Thuận Ý + Chau',prev:880, curr:994,  sw:2,   mode:'equal', persons:[{n:'Thuận Ý',w:1},{n:'Chau',w:1}]},
   {id:4,name:'Khuê + Tuyền', prev:2947,curr:3142,sw:1,   mode:'equal', persons:[{n:'Khuê',w:1},{n:'Tuyền',w:1}]},
   {id:5,name:'Trân',         prev:1032,curr:1119,sw:0.5, mode:'equal', persons:[{n:'Trân',w:1}]},
-  {id:6,name:'Ngan + Nhu',   prev:0,    curr:0,   sw:1,   mode:'equal', persons:[{n:'Nhu',w:1},{n:'Ngan',w:1}]}
+  {id:6,name:'Như + Ngân',   prev:0,    curr:0,   sw:1,   mode:'equal', persons:[{n:'Như',w:1},{n:'Ngân',w:1}]}
 ];
 let nextId = 7;
 
@@ -545,7 +536,7 @@ const mid   = label => { const m=label.match(/(\d+)\/(\d+)/); return m ? m[2]+'-
 const esc   = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
 function prevMonthOf(label) {
-  const m = label.match(/Tháng (\d+)\/(\d+)/);
+  const m = label.match(/(\d+)\/(\d+)/);
   if(!m) return '';
   let month = parseInt(m[1]), year = parseInt(m[2]);
   if(--month === 0) { month = 12; year--; }
@@ -563,6 +554,34 @@ function showToast(msg) {
   el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)';
   clearTimeout(el._t);
   el._t = setTimeout(() => { el.style.opacity='0'; el.style.transform='translateX(-50%) translateY(10px)'; }, 2800);
+}
+
+// Water split shared by the Water tab, Calculate and Copy (honours the manual headcount)
+function waterSplit() {
+  const bill = parseFloat(document.getElementById('waterTotal').value)||0;
+  const auto = residents().length || 1;
+  const override = parseInt(document.getElementById('waterPersonCount').value);
+  const n = (!isNaN(override) && override > 0) ? override : auto;
+  return {bill, n, auto, each: bill>0 ? bill/n : 0};
+}
+const isPlaceholder = name => name === '(Khác)';
+// Water owed per person for a saved record (older records have no waterEach)
+function recWater(rec, p) {
+  if(isPlaceholder(p.name)) return 0;
+  if(rec.waterEach != null) return rec.waterEach;
+  const n = (rec.personResults||[]).filter(x=>!isPlaceholder(x.name)).length;
+  return rec.waterBill && n ? rec.waterBill/n : 0;
+}
+
+// Saved months may still use "Phòng khác" or the old unaccented names for this room
+function migrateRooms(list) {
+  list.forEach(r => {
+    if(r.name !== 'Phòng khác' && r.name !== 'Ngan + Nhu') return;
+    r.name = 'Như + Ngân';
+    const w = r.persons.map(p=>p.w);
+    r.persons = [{n:'Như',w:w[0]||1},{n:'Ngân',w:w[1]||1}];
+  });
+  return list;
 }
 
 function residents() {
@@ -588,16 +607,17 @@ function residentsForWaterDisplay(persons, count) {
 function dbLoad()    { try { return JSON.parse(localStorage.getItem(DB_KEY)||'[]'); } catch{ return []; } }
 function dbSave(r)   { localStorage.setItem(DB_KEY, JSON.stringify(r)); }
 function dbGet(id)   { return dbLoad().find(r=>r.id===id)||null; }
-function dbUpsert(rec) {
+function dbUpsert(rec, push=true) {
   const all = dbLoad();
   const i = all.findIndex(r=>r.id===rec.id);
   if(i>=0) all[i] = {...all[i], ...rec}; else all.unshift(rec);
   dbSave(all);
   refreshDatalist();
-  pushToSheets('upsert', { record: (i>=0 ? all[i] : rec) }); // sync to Sheets
+  if(push) pushToSheets('upsert', { record: (i>=0 ? all[i] : rec) }); // sync to Sheets
 }
 function dbDel(id) {
   dbSave(dbLoad().filter(r=>r.id!==id));
+  // deletedAt is recorded by Sheets so other devices don't re-upload this month
   pushToSheets('delete', { id }); // sync to Sheets
 }
 
@@ -621,9 +641,9 @@ async function syncFromSheets() {
     const res  = await fetch(SHEETS_URL + '?t=' + Date.now());
     const json = await res.json();
 
-    const sheetIds = new Set();
+    if (json.status !== 'ok' || !Array.isArray(json.records)) throw new Error(json.message || 'Bad response');
 
-    if (json.status === 'ok' && Array.isArray(json.records)) {
+    {
       // Re-read localStorage NOW (after the async fetch) to avoid race condition:
       // the user may have saved data while we were waiting for Sheets to respond.
       const local    = dbLoad();
@@ -631,60 +651,70 @@ async function syncFromSheets() {
       local.forEach(r => localMap[r.id] = r);
 
       // Pull: Sheets wins only if its savedAt is strictly newer than local
+      const sheetMap = {};
       json.records.forEach(sr => {
-        sheetIds.add(sr.id);
+        sheetMap[sr.id] = sr;
         const lr = localMap[sr.id];
         if (!lr || !lr.savedAt || (sr.savedAt && sr.savedAt > lr.savedAt)) {
           localMap[sr.id] = sr;
         }
       });
+      // Months deleted on any device stay deleted, unless re-saved after the deletion
+      const deleted = json.deleted || {};
+      Object.keys(localMap).forEach(id => {
+        if (deleted[id] && !(localMap[id].savedAt > deleted[id])) delete localMap[id];
+      });
       dbSave(Object.values(localMap));
       refreshDatalist();
 
-      // Push: send any local records missing from Sheets
-      const toPush = local.filter(r => !sheetIds.has(r.id));
+      // Push: local records missing from Sheets, or newer than the Sheets copy
+      const toPush = Object.values(localMap).filter(r => {
+        const sr = sheetMap[r.id];
+        return !sr || (r.savedAt && (!sr.savedAt || r.savedAt > sr.savedAt));
+      });
+      let pushed = true;
       for (const rec of toPush) {
-        await pushToSheets('upsert', { record: rec });
+        if (!await pushToSheets('upsert', { record: rec })) pushed = false;
       }
-    } else {
-      // Sheets unavailable — still push any local records not yet in Sheets
-      const local = dbLoad();
-      const toPush = local.filter(r => !sheetIds.has(r.id));
-      for (const rec of toPush) {
-        await pushToSheets('upsert', { record: rec });
-      }
+      if (!pushed) return false;
     }
 
     setSyncStatus('ok');
+    return true;
   } catch (err) {
     console.warn('Sheets sync error:', err);
     setSyncStatus('error');
+    return false;
   }
 }
 
 async function pushToSheets(action, data) {
-  if (!SHEETS_URL) return;
+  if (!SHEETS_URL) return true;
   try {
-    await fetch(SHEETS_URL, {
+    const res = await fetch(SHEETS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, ...data })
     });
+    const json = await res.json();
+    if (json.status !== 'ok') throw new Error(json.message || 'Bad response');
     setSyncStatus('ok');
+    return true;
   } catch (err) {
     console.warn('Sheets push error:', err);
     setSyncStatus('error');
+    return false;
   }
 }
 
 async function manualSync() {
-  await syncFromSheets();
+  const synced = await syncFromSheets();
   onMonthChange();
   const histTab = document.getElementById('tab-history');
   if (histTab && histTab.classList.contains('active')) renderHistory();
   const dashTab = document.getElementById('tab-dashboard');
   if (dashTab && dashTab.classList.contains('active')) renderDashboard();
-  showToast('✓ Đã đồng bộ từ Google Sheets');
+  showToast(synced ? '✓ Đã đồng bộ từ Google Sheets' : '⚠️ Đồng bộ thất bại, dữ liệu vẫn lưu trên máy này');
 }
 
 // ═══════════════════════════════════════════ MONTH DROPDOWN
@@ -722,10 +752,18 @@ function populateMonths() {
   onMonthChange();
 }
 
+let loadedMonth = null;
 function onMonthChange() {
   const label = document.getElementById('monthLabel').value.trim();
-  if(!label) return;
+  if(!MONTH_RE.test(label)) return; // still typing
   document.getElementById('waterMonthDisplay').value = label;
+
+  // Don't carry another month's bill into this one
+  if(label !== loadedMonth) {
+    ['totalBill','totalKwh','waterTotal'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('resultCard').style.display = 'none';
+    loadedMonth = label;
+  }
 
   let loadedFromDB = false;
   const ex = dbGet(mid(label));
@@ -733,7 +771,7 @@ function onMonthChange() {
     if(ex.totalBill) document.getElementById('totalBill').value = ex.totalBill;
     if(ex.totalKwh)  document.getElementById('totalKwh').value  = ex.totalKwh;
     if(ex.waterBill) document.getElementById('waterTotal').value = ex.waterBill;
-    if(ex.rooms)     { rooms = JSON.parse(JSON.stringify(ex.rooms)); nextId = Math.max(...rooms.map(r=>r.id))+1; renderRooms(); loadedFromDB = true; }
+    if(ex.rooms)     { rooms = migrateRooms(JSON.parse(JSON.stringify(ex.rooms))); nextId = Math.max(...rooms.map(r=>r.id))+1; renderRooms(); loadedFromDB = true; }
   }
 
   // Auto-suggest previous month in the prev field (only if user hasn't manually changed it)
@@ -766,7 +804,11 @@ function onPrevMonthChange(silent) {
     // Room ID remains stable when its name or residents change.
     // Name fallback keeps older saved records compatible.
     const cur = rooms.find(r => r.id === prevRoom.id) || rooms.find(r => r.name === prevRoom.name);
-    if(cur && prevRoom.curr != null) { cur.prev = prevRoom.curr; updated++; }
+    if(cur && prevRoom.curr != null) {
+      cur.prev = prevRoom.curr;
+      if(cur.curr < cur.prev) cur.curr = cur.prev; // avoid negative usage until the new reading is entered
+      updated++;
+    }
   });
 
   if(updated > 0) {
@@ -918,13 +960,28 @@ function calcCore() {
   return {bill,kwh,pricePer,sharedKwh,sharedTotal,totalWeight,sharedPerUnit};
 }
 
+// Returns a message describing why this month can't be saved, or '' if it's fine
+function validationError(c) {
+  const monthLabel = document.getElementById('monthLabel').value.trim();
+  if(!MONTH_RE.test(monthLabel)) return 'Vui lòng nhập tháng đúng dạng, ví dụ: Tháng 5/2026.';
+  const negative = rooms.filter(r=>r.curr<r.prev).map(r=>r.name);
+  if(negative.length) return `Số đồng hồ tháng này nhỏ hơn tháng trước: ${negative.join(', ')}.`;
+  const noName = rooms.filter(r=>r.persons.some(p=>!p.n.trim())).map(r=>r.name);
+  if(noName.length) return `Vui lòng chọn tên thành viên ở: ${noName.join(', ')}.`;
+  const sumRoom = rooms.reduce((a,r)=>a+r.curr-r.prev,0);
+  if(sumRoom>c.kwh) return `Tổng kWh các phòng (${sumRoom}) lớn hơn đồng hồ tổng (${c.kwh}). Vui lòng kiểm tra lại.`;
+  return '';
+}
+
 function calculate() {
   const c = calcCore();
   if(!c) { alert('Vui lòng nhập tổng tiền điện và tổng kWh.'); return; }
-  const monthLabel = document.getElementById('monthLabel').value||'';
-  const waterBill  = parseFloat(document.getElementById('waterTotal').value)||0;
+  const invalid = validationError(c);
+  if(invalid) { alert(invalid); return; }
+  const monthLabel = document.getElementById('monthLabel').value.trim();
   const persons    = residents();
-  const waterEach  = persons.length>0&&waterBill>0 ? waterBill/persons.length : 0;
+  const {bill:waterBill, n:waterCount, each:waterEach} = waterSplit();
+  const personWater = p => isPlaceholder(p.name) ? 0 : waterEach;
 
   document.getElementById('r-total').textContent     = fmt(c.bill)+' ₫';
   document.getElementById('r-price').textContent     = fmt(c.pricePer)+' ₫';
@@ -985,7 +1042,7 @@ function calculate() {
   if(waterBill>0 && persons.length>0) {
     document.getElementById('resultWaterSection').style.display='block';
     document.getElementById('rw-total').textContent = fmt(waterBill)+' ₫';
-    document.getElementById('rw-count').textContent = persons.length+' người';
+    document.getElementById('rw-count').textContent = waterCount+' người';
     document.getElementById('rw-each').textContent  = fmt(waterEach)+' ₫';
     const wb = document.getElementById('resultWaterBody');
     wb.innerHTML = persons.map(p=>`<tr><td style="font-weight:500">${esc(p.name)}</td><td style="color:var(--text3)">${esc(p.room)}</td><td>${fmt(waterEach)} ₫</td></tr>`).join('');
@@ -996,8 +1053,8 @@ function calculate() {
     gb.innerHTML = persons.map(p=>`
       <tr><td style="font-weight:600">${esc(p.name)}</td>
       <td>${fmt(personElec[p.name]||0)} ₫</td>
-      <td style="color:var(--water)">${fmt(waterEach)} ₫</td>
-      <td style="font-weight:700">${fmt((personElec[p.name]||0)+waterEach)} ₫</td></tr>`).join('');
+      <td style="color:var(--water)">${fmt(personWater(p))} ₫</td>
+      <td style="font-weight:700">${fmt((personElec[p.name]||0)+personWater(p))} ₫</td></tr>`).join('');
   } else {
     document.getElementById('resultWaterSection').style.display='none';
     document.getElementById('resultGrandSection').style.display='none';
@@ -1007,12 +1064,12 @@ function calculate() {
   document.getElementById('resultCard').scrollIntoView({behavior:'smooth',block:'start'});
 
   // ── Save to DB
-  const personResults = persons.map(p=>({name:p.name,room:p.room,dien:personElec[p.name]||0,nuoc:waterEach}));
+  const personResults = persons.map(p=>({name:p.name,room:p.room,dien:personElec[p.name]||0,nuoc:personWater(p)}));
   const rec = {
     id: mid(monthLabel), month: monthLabel,
     totalBill: c.bill, totalKwh: c.kwh, sharedKwh: c.sharedKwh,
     pricePerKwh: c.pricePer, sharedTotal: c.sharedTotal,
-    waterBill, grandElec,
+    waterBill, waterEach, grandElec,
     rooms: JSON.parse(JSON.stringify(rooms)),
     personResults,
     savedAt: new Date().toISOString()
@@ -1047,10 +1104,7 @@ function updateWater() {
   document.getElementById('waterEmpty').style.display='none';
 
   const persons = residents();
-  const autoCount = persons.length || 1;
-  const override  = parseInt(document.getElementById('waterPersonCount').value);
-  const n         = (!isNaN(override) && override > 0) ? override : autoCount;
-  const each      = total / n;
+  const {n, auto:autoCount, each} = waterSplit();
 
   document.getElementById('w-total').textContent     = fmt(total)+' ₫';
   document.getElementById('w-count').textContent     = n+' người';
@@ -1069,6 +1123,8 @@ function saveWater() {
   if(!label) { alert('Vui lòng chọn tháng.'); return; }
   const rec   = dbGet(mid(label)) || {id:mid(label),month:label};
   rec.waterBill = total;
+  rec.waterEach = waterSplit().each;
+  (rec.personResults||[]).forEach(p => { p.nuoc = recWater(rec, p); });
   rec.savedAt   = new Date().toISOString();
   dbUpsert(rec);
   showToast(`✓ Đã lưu tiền nước ${label}`);
@@ -1082,8 +1138,11 @@ function copyResult() {
   const c = calcCore(); if(!c) return;
   const label    = document.getElementById('monthLabel').value||'';
   const waterBill= parseFloat(document.getElementById('waterTotal').value)||0;
-  const persons  = residents();
-  const waterEach= persons.length>0&&waterBill>0 ? waterBill/persons.length : 0;
+  const waterEach= waterSplit().each;
+  const line = (name, elec) => {
+    const w = isPlaceholder(name) ? 0 : waterEach;
+    return `  → ${name}: ⚡${fmt(elec)}${w?` + 💧${fmt(w)} = ${fmt(elec+w)}`:''}  ₫`;
+  };
 
   let lines = [
     `🏠 HAPPY HOUSE – TIỀN NHÀ${label?' '+label:''}`,
@@ -1104,20 +1163,17 @@ function copyResult() {
     if(n>1) {
       if(r.mode==='equal') {
         const each=total/n;
-        vp.forEach(p=>{
-          const tot2=each+(waterEach||0);
-          lines.push(`  → ${p.n}: ⚡${fmt(each)}${waterEach?` + 💧${fmt(waterEach)} = ${fmt(tot2)}`:''}  ₫`);
-        });
+        vp.forEach(p=>lines.push(line(p.n,each)));
       } else {
         const tw=vp.reduce((a,p)=>a+p.w,0);
         const eachRoom=roomCost/n;
         vp.forEach(p=>{
           const personalShared=tw>0?sharedCost*p.w/tw:sharedCost/n;
-          const share=eachRoom+personalShared;
-          const tot2=share+(waterEach||0);
-          lines.push(`  → ${p.n}: ⚡${fmt(share)}${waterEach?` + 💧${fmt(waterEach)} = ${fmt(tot2)}`:''}  ₫`);
+          lines.push(line(p.n,eachRoom+personalShared));
         });
       }
+    } else if(vp.length===1) {
+      lines.push(line(vp[0].n,total));
     }
     lines.push('');
   });
@@ -1216,10 +1272,9 @@ function renderDashboard() {
 
   // ── Person chart — custom HTML bars
   if(latest.personResults && latest.personResults.length>0) {
-    const waterEach = latest.waterBill&&latest.personResults.length ? latest.waterBill/latest.personResults.length : 0;
     const pData = latest.personResults
       .filter(p => p.name !== '(Khác)')
-      .map(p => ({...p, total:(p.dien||0)+waterEach, color:roomColorMap[p.room]||'#6b6962'}))
+      .map(p => ({...p, water:recWater(latest,p), total:(p.dien||0)+recWater(latest,p), color:roomColorMap[p.room]||'#6b6962'}))
       .sort((a,b) => b.total-a.total);
     const maxP = pData.length>0 ? pData[0].total : 1;
 
@@ -1236,7 +1291,7 @@ function renderDashboard() {
             <span class="pbar-total" style="color:${p.color}">${fmt(p.total)} ₫</span>
           </div>
           <div class="pbar-track"><div class="pbar-fill" style="background:${p.color};width:${(p.total/maxP*100).toFixed(1)}%"></div></div>
-          ${waterEach>0?`<div class="pbar-detail">⚡ ${fmt(p.dien||0)} + 💧 ${fmt(waterEach)}</div>`:''}
+          ${p.water>0?`<div class="pbar-detail">⚡ ${fmt(p.dien||0)} + 💧 ${fmt(p.water)}</div>`:''}
         </div>
       </div>`).join('');
 
@@ -1246,7 +1301,7 @@ function renderDashboard() {
     const expensive = roomData ? [...roomData].sort((a,b)=>b.total-a.total)[0] : null;
     document.getElementById('insightBanner').style.display = 'block';
     document.getElementById('insightBanner').innerHTML =
-      `💡 <strong>Tháng ${latest.month||'này'}:</strong> ` +
+      `💡 <strong>${latest.month||'Tháng này'}:</strong> ` +
       (expensive?`Phòng <strong>${expensive.name}</strong> tốn điện nhiều nhất (${fmt(expensive.total)} ₫). `:'') +
       `<strong>${top.name}</strong> trả nhiều nhất (${fmt(top.total)} ₫/người). ` +
       `Trung bình mỗi người <strong>${fmt(avg)} ₫</strong>.`;
@@ -1293,7 +1348,6 @@ function delRecord(id){
 function viewDetail(id) {
   const r = dbGet(id); if(!r) return;
   const spu = r.sharedTotal && r.rooms ? (r.sharedTotal/Math.max(r.rooms.reduce((a,rm)=>a+rm.sw,0),1)) : 0;
-  const waterEach = r.waterBill&&r.personResults&&r.personResults.length ? r.waterBill/r.personResults.length : 0;
 
   let html=`<div class="grid3" style="margin-bottom:14px">
     <div class="stat"><div class="stat-label">Tổng điện</div><div class="stat-value">${fmt(r.grandElec||0)} ₫</div></div>
@@ -1314,7 +1368,7 @@ function viewDetail(id) {
     html+=`<div style="margin-top:14px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Chi phí theo người</div>
     <table><thead><tr><th>Tên</th><th>⚡ Điện</th><th>💧 Nước</th><th>Tổng</th></tr></thead><tbody>`;
     r.personResults.forEach(p=>{
-      html+=`<tr><td style="font-weight:600">${esc(p.name)}</td><td>${fmt(p.dien||0)} ₫</td><td style="color:var(--water)">${fmt(waterEach)} ₫</td><td style="font-weight:700">${fmt((p.dien||0)+waterEach)} ₫</td></tr>`;
+      html+=`<tr><td style="font-weight:600">${esc(p.name)}</td><td>${fmt(p.dien||0)} ₫</td><td style="color:var(--water)">${fmt(recWater(r,p))} ₫</td><td style="font-weight:700">${fmt((p.dien||0)+recWater(r,p))} ₫</td></tr>`;
     });
     html+=`</tbody></table></div>`;
   }
@@ -1335,8 +1389,10 @@ function exportCSV() {
   rows.push([],[' Chi tiết theo người:']);
   rows.push(['Tháng','Tên','Phòng','Điện (VND)','Nước (VND)','Tổng (VND)']);
   all.forEach(r=>{
-    const wE=r.waterBill&&r.personResults?.length ? r.waterBill/r.personResults.length : 0;
-    (r.personResults||[]).forEach(p=>rows.push([r.month||r.id,p.name,p.room,Math.round(p.dien||0),Math.round(wE),Math.round((p.dien||0)+wE)]));
+    (r.personResults||[]).forEach(p=>{
+      const wE=recWater(r,p);
+      rows.push([r.month||r.id,p.name,p.room,Math.round(p.dien||0),Math.round(wE),Math.round((p.dien||0)+wE)]);
+    });
   });
 
   const csv=rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
@@ -1394,7 +1450,7 @@ function initSeedData() {
       {name:'Trân',     room:'Trân',             dien:t5, nuoc:0}
     ],
     savedAt:'2026-03-31T00:00:00.000Z'
-  });
+  }, false); // let syncFromSheets decide, so a new browser can't overwrite the Sheets copy
 }
 
 // ═══════════════════════════════════════════ INIT

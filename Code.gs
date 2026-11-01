@@ -11,12 +11,13 @@
 // ═══════════════════════════════════════════════════════════════
 
 const SHEET_NAME = 'HappyHouseData';
+const DELETED_SHEET_NAME = 'HappyHouseDeleted';
 
 const BASE_HEADERS = [
   'id', 'month', 'totalBill', 'totalKwh', 'sharedKwh',
   'pricePerKwh', 'waterBill', 'savedAt'
 ];
-const DEFAULT_PEOPLE = ['Nhi', 'Quỳnh', 'Trang', 'Vy', 'Thuận Ý', 'Chau', 'Khuê', 'Tuyền', 'Trân', 'Nhu', 'Ngan'];
+const DEFAULT_PEOPLE = ['Nhi', 'Quỳnh', 'Trang', 'Vy', 'Thuận Ý', 'Chau', 'Khuê', 'Tuyền', 'Trân', 'Như', 'Ngân'];
 const HEADERS = BASE_HEADERS.concat(DEFAULT_PEOPLE, ['data_json']);
 const MAX_PERSON_COLUMNS = 50;
 
@@ -32,8 +33,39 @@ function getSheet() {
     sheet.setColumnWidth(HEADERS.length, 800); // data_json column wide
     sheet.getRange(1, 1, 1, HEADERS.length).setHorizontalAlignment('center');
   }
+  // Keep ids as text, otherwise Sheets turns "2026-03" into a date
+  sheet.getRange('A:A').setNumberFormat('@');
   ensurePersonColumns(sheet, DEFAULT_PEOPLE);
   return sheet;
+}
+
+// ── Log of deleted months, so other devices don't re-upload them ──
+function getDeletedSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(DELETED_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(DELETED_SHEET_NAME);
+    sheet.getRange(1, 1, 1, 2).setValues([['id', 'deletedAt']]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  sheet.getRange('A:B').setNumberFormat('@');
+  return sheet;
+}
+
+function getDeleted() {
+  const data = getDeletedSheet().getDataRange().getValues();
+  const deleted = {};
+  for (let i = 1; i < data.length; i++) deleted[normalizeId(data[i][0])] = String(data[i][1]);
+  return deleted;
+}
+
+// ── Older rows may hold the id as a Date ──────────────────────
+function normalizeId(value) {
+  if (value instanceof Date) {
+    const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+    return Utilities.formatDate(value, tz, 'yyyy-MM');
+  }
+  return String(value);
 }
 
 function getHeaders(sheet) {
@@ -96,7 +128,7 @@ function doGet(e) {
         if (data[i][jsonCol]) records.push(JSON.parse(data[i][jsonCol]));
       } catch (err) {}
     }
-    return respond({ status: 'ok', records: records });
+    return respond({ status: 'ok', records: records, deleted: getDeleted() });
   } catch (err) {
     return respond({ status: 'error', message: err.toString() });
   }
@@ -104,7 +136,9 @@ function doGet(e) {
 
 // ── POST: upsert or delete ────────────────────────────────────
 function doPost(e) {
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(20000);
     const body  = JSON.parse(e.postData.contents);
     const sheet = getSheet();
 
@@ -116,7 +150,7 @@ function doPost(e) {
       let found  = false;
 
       for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === rec.id) {
+        if (normalizeId(data[i][0]) === rec.id) {
           sheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
           found = true;
           break;
@@ -137,11 +171,12 @@ function doPost(e) {
     if (body.action === 'delete') {
       const data = sheet.getDataRange().getValues();
       for (let i = 1; i < data.length; i++) {
-        if (data[i][0] === body.id) {
+        if (normalizeId(data[i][0]) === body.id) {
           sheet.deleteRow(i + 1);
           break;
         }
       }
+      getDeletedSheet().appendRow([body.id, new Date().toISOString()]);
       return respond({ status: 'ok' });
     }
 
@@ -149,6 +184,8 @@ function doPost(e) {
 
   } catch (err) {
     return respond({ status: 'error', message: err.toString() });
+  } finally {
+    lock.releaseLock();
   }
 }
 
