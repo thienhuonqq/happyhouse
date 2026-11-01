@@ -4,18 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Happy House – Quản lý Chi phí</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23e6f0e9'/%3E%3Cpath d='M16 6 5 15h3v10h16V15h3z' fill='%234f7f63'/%3E%3Ccircle cx='13' cy='17' r='1.3' fill='%23fff'/%3E%3Ccircle cx='19' cy='17' r='1.3' fill='%23fff'/%3E%3Cpath d='M12.5 20.5q3.5 3 7 0' stroke='%23fff' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f7f6f3;--card:#ffffff;--border:#e5e3dc;--border2:#d0cec6;
-  --text:#1a1a18;--text2:#6b6962;--text3:#9e9b94;
-  --accent:#2d6a4f;--accent-light:#e8f4ee;--accent-text:#1b4332;
-  --water:#0284c7;--water-light:#e0f2fe;
+  --bg:#fbf7f0;--card:#ffffff;--border:#eee7da;--border2:#ddd5c6;
+  --text:#2b2a26;--text2:#66635b;--text3:#8a867c;
+  --accent:#4f7f63;--accent-light:#e6f0e9;--accent-text:#2c5140;
+  --water:#2f86b8;--water-light:#e2f1f9;
   --danger:#c0392b;--danger-light:#fdf0ef;
-  --radius:10px;--radius-sm:7px;--shadow:0 1px 3px rgba(0,0,0,0.08);
+  --peach-light:#fdeee3;--peach-text:#9a4f22;--track:#f1ece2;
+  --radius:16px;--radius-sm:10px;--shadow:0 2px 10px rgba(90,75,50,.07);
 }
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
+body{font-family:'Be Vietnam Pro',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
 h1{font-size:20px;font-weight:700;letter-spacing:-0.3px}
 .subtitle{font-size:12px;color:var(--text3);margin-top:2px}
 
@@ -232,32 +235,74 @@ tr:last-child td{border-bottom:none}
 .modal-title{font-size:15px;font-weight:700}
 .modal-close{padding:4px 9px;border:none;background:none;cursor:pointer;font-size:17px;color:var(--text3);border-radius:6px}
 .modal-close:hover{background:var(--bg)}
+
+/* ── Visual refresh ── */
+.tab-btn{display:flex;align-items:center;gap:7px}
+.tab-icon{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;background:var(--bg)}
+.tab-icon.sage{background:var(--accent-light)}.tab-icon.sky{background:var(--water-light)}.tab-icon.peach{background:var(--peach-light)}
+.logo{background:var(--accent-light);padding:4px}.logo svg{width:100%;height:100%}
+.card,.result-card,.chart-wrap,.dash-stat{border-color:transparent}
+.primary-btn,.add-room-btn,.copy-btn{border-radius:999px}
+.primary-btn{box-shadow:0 4px 12px rgba(79,127,99,.25)}
+.primary-btn:active{transform:scale(.98)}
+.room-avatar{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.room-avatar.sm{width:24px;height:24px;font-size:12px;margin-right:5px;vertical-align:middle}
+.pbar-avatar{font-size:17px}
+.pbar-badge.saver{background:var(--accent-light);color:var(--accent-text)}
+.rm-person-btn,.del-rec-btn,.modal-close{width:28px;height:28px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
+.del-rec-btn:hover,.modal-close:hover{background:var(--danger-light);color:var(--danger)}
+.sync-btn.spinning .sync-icon{display:inline-block;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.confetti{position:fixed;top:-20px;z-index:9998;font-size:18px;pointer-events:none;animation:fall 1.5s ease-in forwards}
+@keyframes fall{to{transform:translateY(100vh) rotate(300deg);opacity:0}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.confetti{display:none}}
+#syncStatus{white-space:nowrap}
+@media(max-width:600px){.app-header .subtitle{display:none}}
+#insightBanner,.info-banner{border-color:transparent!important}
+.cbar-track,.pbar-track{background:var(--track)}
+.water-table th{background:var(--water-light);color:var(--water)}
+.water-stat-box{border-color:transparent}.water-stat-label{color:var(--text2)}
+.sheets-card{background:var(--accent-light);border-color:transparent}
+.sheets-title,.sheets-body,.sheets-tip{color:var(--accent-text)}.sheets-tip{background:var(--card)}
+.save-badge{background:var(--accent-light);color:var(--accent-text)}
+.tag-equal{background:var(--accent-light);color:var(--accent-text)}
+.tag-ratio,.pbar-badge{background:var(--peach-light);color:var(--peach-text)}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1c1b19;--card:#272623;--border:#3a3834;--border2:#4b4943;
+  --text:#f2efe8;--text2:#bdb9af;--text3:#8f8b82;
+  --accent:#8fc2a4;--accent-light:#2c3b32;--accent-text:#c9e6d5;
+  --water:#7cc4ea;--water-light:#22343f;
+  --danger:#ef8f84;--danger-light:#40292a;
+  --peach-light:#43322a;--peach-text:#f5c6a8;--track:#34322e;
+  --shadow:0 2px 8px rgba(0,0,0,.3)}
+  .primary-btn,.split-btn.active{color:#16201a}
+}
 </style>
 </head>
 <body>
 
 <!-- ══════════════════════════════════════════════ HEADER -->
 <div class="app-header">
-  <div class="logo">🏠</div>
+  <div class="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5 4 15h3.5v11h17V15H28z" fill="#4f7f63"/><circle cx="13" cy="17" r="1.4" fill="#fff"/><circle cx="19" cy="17" r="1.4" fill="#fff"/><path d="M12.5 20.5q3.5 3 7 0" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></div>
   <div>
     <h1>Happy House</h1>
     <div class="subtitle">Quản lý chi phí điện · nước hàng tháng</div>
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
     <span id="syncStatus" style="font-size:11px;font-weight:500;color:var(--text3)"></span>
-    <button onclick="manualSync()" title="Đồng bộ Google Sheets"
+    <button id="syncBtn" class="sync-btn" onclick="manualSync()" title="Đồng bộ Google Sheets"
       style="padding:5px 10px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:none;cursor:pointer;font-size:12px;color:var(--text2);white-space:nowrap">
-      🔄 Đồng bộ
+      <span class="sync-icon">🔄</span> Đồng bộ
     </button>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════ TABS -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="showTab('dien',this)">⚡ Tính Điện</button>
-  <button class="tab-btn" onclick="showTab('nuoc',this)">💧 Tiền Nước</button>
-  <button class="tab-btn" onclick="showTab('dashboard',this)">📊 Dashboard</button>
-  <button class="tab-btn" onclick="showTab('history',this)">📅 Lịch Sử</button>
+  <button class="tab-btn active" onclick="showTab('dien',this)"><span class="tab-icon sage">⚡</span>Tính Điện</button>
+  <button class="tab-btn" onclick="showTab('nuoc',this)"><span class="tab-icon sky">💧</span>Tiền Nước</button>
+  <button class="tab-btn" onclick="showTab('dashboard',this)"><span class="tab-icon peach">📊</span>Dashboard</button>
+  <button class="tab-btn" onclick="showTab('history',this)"><span class="tab-icon peach">🗓️</span>Lịch Sử</button>
 </div>
 
 <div class="container">
@@ -431,8 +476,8 @@ tr:last-child td{border-bottom:none}
 <!-- ══════════════════════════════════════════════ TAB: DASHBOARD -->
 <div class="tab-content" id="tab-dashboard">
   <div id="dashEmpty" class="empty-state" style="display:none">
-    <div class="empty-icon">📊</div>
-    <p>Chưa có dữ liệu.<br>Tính và lưu tháng đầu tiên để xem dashboard.</p>
+    <div class="empty-icon">🏠💤</div>
+    <p>Chưa có dữ liệu nè!<br>Tính và lưu tháng đầu tiên để xem dashboard.</p>
   </div>
   <div id="dashContent">
     <div class="dash-grid" id="dashStats"></div>
@@ -515,6 +560,11 @@ const HOUSEHOLD_ROSTER = [
 ];
 const ROOM_SUGGESTIONS = [...new Set(HOUSEHOLD_ROSTER.map(p=>p.room))];
 const PERSON_SUGGESTIONS = HOUSEHOLD_ROSTER.map(p=>p.name);
+const ROOM_STYLES = {
+  'Nhi + Quỳnh':['🌸','#c9577f'], 'Trang + Vy':['🌿','#4f7f63'], 'Thuận Ý + Chau':['🍊','#d9822b'],
+  'Khuê + Tuyền':['🐱','#7a68b8'], 'Trân':['⭐','#b8931f'], 'Như + Ngân':['🌙','#3f7fb0']
+};
+const EXTRA_ROOM_STYLES = [['🦋','#2f9aa0'],['🍀','#5c8f3a'],['🐰','#b5688c'],['🌻','#b3861a'],['🍓','#c4505a'],['🐳','#3d78a8']];
 const DB_KEY = 'happy_house_v2';
 const MONTH_RE = /^(Tháng )?\d{1,2}\/\d{4}$/;
 
@@ -584,6 +634,26 @@ function migrateRooms(list) {
   return list;
 }
 
+// New rooms get a stable style derived from their name
+function roomStyle(name) {
+  if(ROOM_STYLES[name]) return ROOM_STYLES[name];
+  const hash = Array.from(String(name)).reduce((a,ch)=>a+ch.codePointAt(0),0);
+  return EXTRA_ROOM_STYLES[hash % EXTRA_ROOM_STYLES.length];
+}
+function roomAvatar(name, small) {
+  const [emoji,color] = roomStyle(name);
+  return `<span class="room-avatar${small?' sm':''}" style="background:${color}22" aria-hidden="true">${emoji}</span>`;
+}
+function celebrate() {
+  ['🎉','✨','💚','🌸','💧','⭐','🎉','✨','🍊','🌿'].forEach((emoji,i) => {
+    const el = document.createElement('span');
+    el.className = 'confetti'; el.textContent = emoji;
+    el.style.left = (5+i*9.5)+'%'; el.style.animationDelay = (i%4*.08)+'s';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 2000);
+  });
+}
+
 function residents() {
   // Real residents only — old "(Khác)" placeholders are not people.
   return rooms.flatMap(r => r.persons.filter(p => p.n.trim() && p.n !== '(Khác)').map(p=>({name:p.n,room:r.name})));
@@ -626,6 +696,7 @@ function dbDel(id) {
 function setSyncStatus(state) {
   const el = document.getElementById('syncStatus');
   if (!el) return;
+  document.getElementById('syncBtn').classList.toggle('spinning', state === 'syncing');
   if (state === 'syncing') { el.textContent = '⟳ Đang đồng bộ...'; el.style.color = 'var(--text3)'; }
   if (state === 'ok')      { el.textContent = '✓ Google Sheets'; el.style.color = 'var(--accent)';
     setTimeout(() => { if (el.textContent.startsWith('✓')) el.textContent = ''; }, 4000); }
@@ -916,6 +987,7 @@ function renderRooms() {
     div.className = 'room-card';
     div.innerHTML = `
       <div class="room-header">
+        ${roomAvatar(r.name)}
         <input class="room-name-select" type="text" list="roomNameSuggestions" value="${esc(r.name)}"
           placeholder="Tên phòng" oninput="setField(${r.id},'name',this.value)">
         <button class="del-btn" onclick="removeRoom(${r.id})">Xóa</button>
@@ -1029,7 +1101,7 @@ function calculate() {
     const tag = n>1 ? (r.mode==='equal'?`<span class="tag tag-equal">chia đều</span>`:`<span class="tag tag-ratio">tỉ lệ</span>`) : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><div class="room-label">${esc(r.name)} ${tag}</div><div class="room-meta">${used} kWh · trọng số: ${r.sw}</div>${bdHtml}</td>
+      <td><div class="room-label">${roomAvatar(r.name,true)}${esc(r.name)} ${tag}</div><div class="room-meta">${used} kWh · trọng số: ${r.sw}</div>${bdHtml}</td>
       <td>${fmt(roomCost)} ₫</td><td>${fmt(sharedCost)} ₫</td><td style="font-weight:700">${fmt(total)} ₫</td>`;
     tbody.appendChild(tr);
   });
@@ -1075,6 +1147,7 @@ function calculate() {
     savedAt: new Date().toISOString()
   };
   dbUpsert(rec);
+  celebrate();
   const badge = document.getElementById('saveBadge');
   badge.style.display='inline-flex';
   setTimeout(()=>badge.style.display='none', 3000);
@@ -1226,18 +1299,17 @@ function renderDashboard() {
     data:{
       labels: records.map(r=>r.month||r.id),
       datasets:[
-        {label:'Điện',  data:records.map(r=>Math.round(r.grandElec||0)), backgroundColor:'rgba(45,106,79,.8)',  borderRadius:4, stack:'s'},
-        {label:'Nước',  data:records.map(r=>Math.round(r.waterBill||0)), backgroundColor:'rgba(2,132,199,.75)', borderRadius:4, stack:'s'}
+        {label:'Điện',  data:records.map(r=>Math.round(r.grandElec||0)), backgroundColor:'rgba(79,127,99,.85)',  borderRadius:4, stack:'s'},
+        {label:'Nước',  data:records.map(r=>Math.round(r.waterBill||0)), backgroundColor:'rgba(47,134,184,.8)', borderRadius:4, stack:'s'}
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:11}}}},
-      scales:{y:{ticks:{callback:v=>fmtS(v),font:{size:10}},grid:{color:'#f0f0f0'}},x:{ticks:{font:{size:10}},grid:{display:false}}}}
+      scales:{y:{ticks:{callback:v=>fmtS(v),font:{size:10}},grid:{color:'rgba(128,120,105,.15)'}},x:{ticks:{font:{size:10}},grid:{display:false}}}}
   });
 
   // ── Room chart — custom HTML bars
-  const ROOM_COLORS = ['#2d6a4f','#2563eb','#7c3aed','#d97706','#e11d48','#0891b2'];
-  const roomColorMap = {};
-  (latest.rooms||[]).forEach((r,i) => roomColorMap[r.name] = ROOM_COLORS[i % ROOM_COLORS.length]);
+    const roomColorMap = {};
+  (latest.rooms||[]).forEach((r,i) => roomColorMap[r.name] = roomStyle(r.name)[1]);
   let roomData = [];
 
   if(latest.rooms && latest.pricePerKwh) {
@@ -1259,7 +1331,7 @@ function renderDashboard() {
       const perPerson= r.vp.length>0 ? fmt(Math.round(r.total/r.vp.length)) : '—';
       return `<div class="cbar-row">
         <div class="cbar-header">
-          <div><div class="cbar-name">${esc(r.name)}</div>
+          <div><div class="cbar-name">${roomAvatar(r.name,true)}${esc(r.name)}</div>
           <div class="cbar-sub">${r.vp.map(p=>esc(p.n)).join(' · ')}</div></div>
           <div class="cbar-amount" style="color:${r.color}">${fmt(r.total)} ₫</div>
         </div>
@@ -1281,12 +1353,13 @@ function renderDashboard() {
     document.getElementById('personChartMonthLabel').textContent = '– '+(latest.month||'');
     document.getElementById('personChartCustom').innerHTML = pData.map((p,i) => `
       <div class="pbar-row">
-        <div class="pbar-avatar" style="background:${p.color}">${esc(Array.from(p.name)[0])}</div>
+        <div class="pbar-avatar" style="background:${p.color}22">${roomStyle(p.room)[0]}</div>
         <div class="pbar-body">
           <div class="pbar-top">
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
               <span class="pbar-name">${esc(p.name)}</span>
-              ${i===0?'<span class="pbar-badge">🏆 cao nhất</span>':''}
+              ${i===0?'<span class="pbar-badge">⚡ dùng nhiều nhất</span>':''}
+              ${i===pData.length-1&&i>0?'<span class="pbar-badge saver">🌱 tiết kiệm nhất</span>':''}
             </div>
             <span class="pbar-total" style="color:${p.color}">${fmt(p.total)} ₫</span>
           </div>
@@ -1323,7 +1396,7 @@ function renderHistory() {
   const shown = filterVal==='all' ? all : all.filter(r=>r.id===filterVal);
   const tbody = document.getElementById('historyBody');
   if(shown.length===0){
-    tbody.innerHTML=`<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:28px">Chưa có dữ liệu. Tính tháng đầu tiên và bấm lưu!</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:28px">🏠💤 Chưa có dữ liệu nè! Tính tháng đầu tiên và bấm lưu nhé.</td></tr>`;
     return;
   }
   tbody.innerHTML=shown.map(r=>`
@@ -1360,7 +1433,7 @@ function viewDetail(id) {
     r.rooms.forEach(rm=>{
       const used=Math.max(0,(rm.curr||0)-(rm.prev||0));
       const rc=used*(r.pricePerKwh||0), sc=spu*rm.sw;
-      html+=`<tr><td class="room-label">${esc(rm.name)}</td><td>${used}</td><td>${fmt(rc)} ₫</td><td>${fmt(sc)} ₫</td><td style="font-weight:700">${fmt(rc+sc)} ₫</td></tr>`;
+      html+=`<tr><td class="room-label">${roomAvatar(rm.name,true)}${esc(rm.name)}</td><td>${used}</td><td>${fmt(rc)} ₫</td><td>${fmt(sc)} ₫</td><td style="font-weight:700">${fmt(rc+sc)} ₫</td></tr>`;
     });
     html+=`</tbody></table></div>`;
   }
