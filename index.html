@@ -258,6 +258,7 @@ tr:last-child td{border-bottom:none}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.confetti{display:none}}
 #syncStatus{white-space:nowrap}
 @media(max-width:600px){.app-header .subtitle{display:none}}
+.chart-canvas-wrap.trend{height:240px}
 #insightBanner,.info-banner{border-color:transparent!important}
 .cbar-track,.pbar-track{background:var(--track)}
 .water-table th{background:var(--water-light);color:var(--water)}
@@ -480,10 +481,13 @@ tr:last-child td{border-bottom:none}
     <p>Chưa có dữ liệu nè!<br>Tính và lưu tháng đầu tiên để xem dashboard.</p>
   </div>
   <div id="dashContent">
+    <div class="history-controls">
+      <select id="dashMonth" aria-label="Chọn tháng" onchange="dashMonthId=this.value;renderDashboard()"></select>
+    </div>
     <div class="dash-grid" id="dashStats"></div>
     <div class="chart-wrap">
       <div class="chart-title">📈 Tổng chi phí theo tháng</div>
-      <div class="chart-canvas-wrap"><canvas id="trendChart"></canvas></div>
+      <div class="chart-canvas-wrap trend"><canvas id="trendChart"></canvas></div>
     </div>
     <div id="insightBanner" style="display:none;background:var(--accent-light);border:1px solid #b7ddc9;border-radius:var(--radius);padding:13px 16px;margin-bottom:14px;font-size:13px;color:var(--accent-text);line-height:1.6"></div>
     <div class="chart-charts-2">
@@ -1262,6 +1266,7 @@ function copyResult() {
 
 // ═══════════════════════════════════════════ DASHBOARD
 let charts={};
+let dashMonthId=null;
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch{}});charts={};}
 
 function renderDashboard() {
@@ -1276,11 +1281,17 @@ function renderDashboard() {
   document.getElementById('dashEmpty').style.display='none';
   document.getElementById('dashContent').style.display='block';
 
-  const latest = records[records.length-1];
-  const prev   = records.length>1 ? records[records.length-2] : null;
+  const foundIdx = records.findIndex(r=>r.id===dashMonthId);
+  const idx    = foundIdx>=0 ? foundIdx : records.length-1;
+  const latest = records[idx];
+  const prev   = idx>0 ? records[idx-1] : null;
+  const monthSel = document.getElementById('dashMonth');
+  monthSel.innerHTML = [...records].reverse().map(r=>`<option value="${esc(r.id)}">${esc(r.month||r.id)}</option>`).join('');
+  monthSel.value = latest.id;
   const tDien  = latest.grandElec||0;
   const tNuoc  = latest.waterBill||0;
   const tAll   = tDien+tNuoc;
+  const headcount = (latest.personResults||[]).filter(p=>!isPlaceholder(p.name)).length;
   const pAll   = prev ? (prev.grandElec||0)+(prev.waterBill||0) : 0;
   const diff   = pAll>0 ? ((tAll-pAll)/pAll*100) : 0;
   const diffTxt= pAll>0 ? (diff>0?`▲ ${diff.toFixed(0)}%`:`▼ ${Math.abs(diff).toFixed(0)}%`) : 'Tháng đầu tiên';
@@ -1289,22 +1300,42 @@ function renderDashboard() {
   document.getElementById('dashStats').innerHTML=`
     <div class="dash-stat"><div class="dash-stat-label">Tiền điện</div><div class="dash-stat-val" style="color:var(--accent)">${fmtS(tDien)} ₫</div><div class="dash-stat-sub neutral">${latest.month}</div></div>
     <div class="dash-stat"><div class="dash-stat-label">Tiền nước</div><div class="dash-stat-val" style="color:var(--water)">${fmtS(tNuoc)} ₫</div><div class="dash-stat-sub neutral">${latest.month}</div></div>
-    <div class="dash-stat"><div class="dash-stat-label">Tổng tháng này</div><div class="dash-stat-val">${fmtS(tAll)} ₫</div><div class="dash-stat-sub ${diffCls}">${diffTxt} vs tháng trước</div></div>
-    <div class="dash-stat"><div class="dash-stat-label">Số tháng lưu</div><div class="dash-stat-val">${records.length}</div><div class="dash-stat-sub neutral">tháng</div></div>
+    <div class="dash-stat"><div class="dash-stat-label">Tổng tháng</div><div class="dash-stat-val">${fmtS(tAll)} ₫</div><div class="dash-stat-sub ${diffCls}">${diffTxt}${pAll>0?' so với '+esc(prev.month||prev.id):''}</div></div>
+    <div class="dash-stat"><div class="dash-stat-label">Trung bình mỗi người</div><div class="dash-stat-val">${headcount?fmtS(tAll/headcount)+' ₫':'—'}</div><div class="dash-stat-sub neutral">${headcount} người</div></div>
   `;
 
-  // Trend chart
+  // Trend chart: selected month stands out, click a bar to open that month
+  const rootStyle = getComputedStyle(document.documentElement);
+  const shown = records.slice(-12);
+  const shade = (color,r) => r.id===latest.id ? color : color+'66';
+  const totalLabels = {id:'totalLabels', afterDatasetsDraw(chart){
+    const ctx = chart.ctx, top = chart.getDatasetMeta(1).data;
+    ctx.save();
+    ctx.font = "700 11px 'Be Vietnam Pro',system-ui,sans-serif";
+    ctx.fillStyle = rootStyle.getPropertyValue('--text2');
+    ctx.textAlign = 'center';
+    shown.forEach((r,i) => ctx.fillText(fmtS((r.grandElec||0)+(r.waterBill||0)), top[i].x, top[i].y-6));
+    ctx.restore();
+  }};
   charts.trend = new Chart(document.getElementById('trendChart'),{
     type:'bar',
     data:{
-      labels: records.map(r=>r.month||r.id),
+      labels: shown.map(r=>{ const m=(r.month||r.id).match(/(\d+)\/\d{2}(\d{2})/); return m?`T${m[1]}/${m[2]}`:(r.month||r.id); }),
       datasets:[
-        {label:'Điện',  data:records.map(r=>Math.round(r.grandElec||0)), backgroundColor:'rgba(79,127,99,.85)',  borderRadius:4, stack:'s'},
-        {label:'Nước',  data:records.map(r=>Math.round(r.waterBill||0)), backgroundColor:'rgba(47,134,184,.8)', borderRadius:4, stack:'s'}
+        {label:'⚡ Điện', data:shown.map(r=>Math.round(r.grandElec||0)), backgroundColor:shown.map(r=>shade('#4f9a72',r)), borderRadius:{bottomLeft:8,bottomRight:8}, borderSkipped:false, maxBarThickness:46, stack:'s'},
+        {label:'💧 Nước', data:shown.map(r=>Math.round(r.waterBill||0)), backgroundColor:shown.map(r=>shade('#4ba3d6',r)), borderRadius:{topLeft:8,topRight:8}, borderSkipped:false, maxBarThickness:46, stack:'s'}
       ]
     },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:11}}}},
-      scales:{y:{ticks:{callback:v=>fmtS(v),font:{size:10}},grid:{color:'rgba(128,120,105,.15)'}},x:{ticks:{font:{size:10}},grid:{display:false}}}}
+    plugins:[totalLabels],
+    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:20}},
+      onClick:(e,items)=>{ if(items.length){ dashMonthId=shown[items[0].index].id; renderDashboard(); } },
+      onHover:(e,items)=>{ e.native.target.style.cursor = items.length?'pointer':'default'; },
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',boxWidth:8,font:{size:11}}},
+        tooltip:{mode:'index',intersect:false,callbacks:{
+          label:i=>`${i.dataset.label}: ${fmt(i.raw)} ₫`,
+          footer:i=>`Tổng: ${fmt(i.reduce((a,x)=>a+x.raw,0))} ₫`}}},
+      scales:{y:{beginAtZero:true,border:{display:false},ticks:{maxTicksLimit:5,callback:v=>fmtS(v),font:{size:10}},grid:{color:'rgba(128,120,105,.15)'}},
+        x:{ticks:{font:{size:11}},grid:{display:false}}}}
   });
 
   // ── Room chart — custom HTML bars
